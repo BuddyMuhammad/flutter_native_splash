@@ -126,6 +126,9 @@ void _createSplashByConfig(Map<String, dynamic> config) {
   final String iosContentMode =
       config[_Parameter.iosContentMode] as String? ?? 'center';
   final webImageMode = config[_Parameter.webImageMode] as String? ?? 'center';
+  final bool spinnerEnabled = config[_Parameter.spinner] as bool? ?? false;
+  final String? spinnerColor = parseColor(config[_Parameter.spinnerColor]);
+  final String? spinnerColorDark = parseColor(config[_Parameter.spinnerColorDark]);
   String? android12Image;
   String? android12DarkImage;
   String? android12IconBackgroundColor;
@@ -183,6 +186,9 @@ void _createSplashByConfig(Map<String, dynamic> config) {
         android12BrandingImagePath: android12BrandingImage,
         android12DarkBrandingImagePath:
             android12DarkBrandingImage ?? android12BrandingImage,
+        spinnerEnabled: spinnerEnabled,
+        spinnerColor: spinnerColor,
+        spinnerColorDark: spinnerColorDark ?? spinnerColor,
       );
     } else {
       print('Android folder not found, skipping Android splash update...');
@@ -464,6 +470,9 @@ class _Parameter {
   static const ios = 'ios';
   static const iosContentMode = 'ios_content_mode';
   static const plistFiles = 'info_plist_files';
+  static const spinner = 'spinner';
+  static const spinnerColor = 'spinner_color';
+  static const spinnerColorDark = 'spinner_color_dark';
   static const web = 'web';
   static const webImageMode = 'web_image_mode';
 
@@ -514,6 +523,9 @@ class _Parameter {
     ios,
     iosContentMode,
     plistFiles,
+    spinner,
+    spinnerColor,
+    spinnerColorDark,
     web,
     webImageMode,
   ];

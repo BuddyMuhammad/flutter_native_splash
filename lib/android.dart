@@ -70,6 +70,9 @@ void _createAndroidSplash({
   required String? screenOrientation,
   String? android12BrandingImagePath,
   String? android12DarkBrandingImagePath,
+  bool spinnerEnabled = false,
+  String? spinnerColor,
+  String? spinnerColorDark,
 }) {
   _applyImageAndroid(imagePath: imagePath);
 
@@ -176,6 +179,14 @@ void _createAndroidSplash({
     }
   }
 
+  // Generate spinner drawable for Android 12+ if enabled
+  if (spinnerEnabled) {
+    _createSpinnerDrawables(
+      spinnerColor: spinnerColor,
+      spinnerColorDark: spinnerColorDark,
+    );
+  }
+
   print('[Android] Updating styles...');
   _applyStylesXml(
     fullScreen: fullscreen,
@@ -185,6 +196,7 @@ void _createAndroidSplash({
     android12ImagePath: android12ImagePath,
     android12IconBackgroundColor: android12IconBackgroundColor,
     android12BrandingImagePath: android12BrandingImagePath,
+    spinnerEnabled: spinnerEnabled,
   );
 
   _applyStylesXml(
@@ -195,6 +207,7 @@ void _createAndroidSplash({
     android12ImagePath: android12DarkImagePath,
     android12IconBackgroundColor: darkAndroid12IconBackgroundColor,
     android12BrandingImagePath: android12DarkBrandingImagePath,
+    spinnerEnabled: spinnerEnabled,
   );
 
   _applyStylesXml(
@@ -367,6 +380,7 @@ void _applyStylesXml({
   String? android12ImagePath,
   String? android12IconBackgroundColor,
   String? android12BrandingImagePath,
+  bool spinnerEnabled = false,
 }) {
   final stylesFile = File(file);
   print('[Android]  - $file');
@@ -384,6 +398,7 @@ void _applyStylesXml({
     android12ImagePath: android12ImagePath,
     android12IconBackgroundColor: android12IconBackgroundColor,
     android12BrandingImagePath: android12BrandingImagePath,
+    spinnerEnabled: spinnerEnabled,
   );
 }
 
@@ -395,6 +410,7 @@ Future<void> _updateStylesFile({
   required String? android12ImagePath,
   required String? android12IconBackgroundColor,
   required String? android12BrandingImagePath,
+  bool spinnerEnabled = false,
 }) async {
   final stylesDocument = XmlDocument.parse(stylesFile.readAsStringSync());
   final resources = stylesDocument.getElement('resources');
@@ -475,16 +491,33 @@ Future<void> _updateStylesFile({
     );
   }
 
-  if (android12ImagePath == null) {
+  if (android12ImagePath == null && !spinnerEnabled) {
     _removeElement(
       launchTheme: launchTheme,
       name: 'android:windowSplashScreenAnimatedIcon',
+    );
+  } else if (spinnerEnabled) {
+    // Use the animated spinner drawable instead of static image
+    _replaceElement(
+      launchTheme: launchTheme,
+      name: 'android:windowSplashScreenAnimatedIcon',
+      value: '@drawable/splash_spinner_animated',
+    );
+    // Set animation duration (the system plays the animation for this long)
+    _replaceElement(
+      launchTheme: launchTheme,
+      name: 'android:windowSplashScreenAnimationDuration',
+      value: '1000',
     );
   } else {
     _replaceElement(
       launchTheme: launchTheme,
       name: 'android:windowSplashScreenAnimatedIcon',
       value: '@drawable/android12splash',
+    );
+    _removeElement(
+      launchTheme: launchTheme,
+      name: 'android:windowSplashScreenAnimationDuration',
     );
   }
 
@@ -569,4 +602,93 @@ void _applyOrientation({required String? orientation}) {
       },
     ),
   );
+}
+
+/// Create animated spinner drawables for Android 12+ splash screen.
+///
+/// Generates three XML files:
+/// 1. A vector drawable (circular spinner ring)
+/// 2. An animator (360° rotation)
+/// 3. An animated-vector that ties them together
+///
+/// The Android system plays this animation automatically during splash.
+void _createSpinnerDrawables({
+  String? spinnerColor,
+  String? spinnerColorDark,
+}) {
+  print('[Android] Creating spinner animation drawables...');
+  final color = spinnerColor != null ? '#$spinnerColor' : '#FFFFFF';
+  final colorDark = spinnerColorDark != null ? '#$spinnerColorDark' : color;
+
+  // 1. Vector drawable: a circular arc (spinner ring)
+  const spinnerVectorTemplate = '''<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <group
+        android:name="spinnerGroup"
+        android:pivotX="24"
+        android:pivotY="24">
+        <path
+            android:name="spinnerPath"
+            android:pathData="M24,4 A20,20,0,1,1,4,24"
+            android:strokeWidth="4"
+            android:strokeColor="{{SPINNER_COLOR}}"
+            android:strokeLineCap="round"
+            android:fillColor="@android:color/transparent"/>
+    </group>
+</vector>
+''';
+
+  // 2. Animator: infinite 360° rotation
+  const spinnerAnimatorXml = '''<?xml version="1.0" encoding="utf-8"?>
+<set xmlns:android="http://schemas.android.com/apk/res/android">
+    <objectAnimator
+        android:propertyName="rotation"
+        android:valueFrom="0"
+        android:valueTo="360"
+        android:duration="1000"
+        android:repeatCount="infinite"
+        android:interpolator="@android:interpolator/linear" />
+</set>
+''';
+
+  // 3. Animated vector: ties vector + animator together
+  const spinnerAnimatedVectorXml =
+      '''<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/splash_spinner_vector">
+    <target
+        android:name="spinnerGroup"
+        android:animation="@animator/splash_spinner_rotation" />
+</animated-vector>
+''';
+
+  final resFolder = _flavorHelper.androidResFolder;
+
+  // Light mode
+  final drawableDir = '${resFolder}drawable-v31/';
+  final animatorDir = '${resFolder}animator/';
+  Directory(drawableDir).createSync(recursive: true);
+  Directory(animatorDir).createSync(recursive: true);
+
+  File('${drawableDir}splash_spinner_vector.xml')
+      .writeAsStringSync(spinnerVectorTemplate.replaceAll('{{SPINNER_COLOR}}', color));
+  File('${animatorDir}splash_spinner_rotation.xml')
+      .writeAsStringSync(spinnerAnimatorXml);
+  File('${drawableDir}splash_spinner_animated.xml')
+      .writeAsStringSync(spinnerAnimatedVectorXml);
+
+  // Dark mode
+  final drawableNightDir = '${resFolder}drawable-night-v31/';
+  Directory(drawableNightDir).createSync(recursive: true);
+
+  File('${drawableNightDir}splash_spinner_vector.xml')
+      .writeAsStringSync(spinnerVectorTemplate.replaceAll('{{SPINNER_COLOR}}', colorDark));
+  File('${drawableNightDir}splash_spinner_animated.xml')
+      .writeAsStringSync(spinnerAnimatedVectorXml);
+
+  print('[Android] Spinner animation drawables created');
 }
